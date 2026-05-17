@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { YouTubeResult } from '../services/youtubePlayer';
+import type { TrackResult } from '../services/youtubePlayer';
 
 export type PlayingAlbum = {
   mbid: string;
@@ -12,6 +12,14 @@ export type PlayingAlbum = {
   sourceCol: number;
 };
 
+// A queued track carries its album so the queue panel can group by album.
+export type QueueItem = TrackResult & {
+  albumMbid: string;
+  albumTitle: string;
+  albumArtist: string;
+  albumCoverUrl: string;
+};
+
 export type PlayerPhase = 'idle' | 'flying' | 'landing' | 'playing' | 'paused' | 'stopping' | 'error';
 
 type PlayerState = {
@@ -21,11 +29,12 @@ type PlayerState = {
   position: number;
   duration: number;
   error?: string;
-  // All YouTube candidates for the current album, plus the queue the user
-  // builds from them. `currentVideoId` is the one actually loaded in the player.
-  results: YouTubeResult[];
-  resultsLoading: boolean;
-  queue: YouTubeResult[];
+  // Resolved per-track videos for the current album (shown in the Results
+  // panel). `queue` is the album-grouped play queue; `currentVideoId` is the
+  // one actually loaded in the player.
+  tracks: TrackResult[];
+  tracksLoading: boolean;
+  queue: QueueItem[];
   currentVideoId?: string;
 };
 
@@ -38,16 +47,29 @@ type PlayerActions = {
   setIsPlaying: (v: boolean) => void;
   setProgress: (position: number, duration: number) => void;
   setError: (err: string | undefined) => void;
-  // Results / queue.
-  setResults: (results: YouTubeResult[]) => void;
-  setResultsLoading: (v: boolean) => void;
+  // Tracks / queue.
+  setTracks: (tracks: TrackResult[]) => void;
+  setTracksLoading: (v: boolean) => void;
   setCurrentVideoId: (id: string | undefined) => void;
-  playVideoNow: (r: YouTubeResult) => void;
-  enqueue: (r: YouTubeResult) => void;
+  playVideoNow: (r: TrackResult) => void;
+  enqueue: (r: TrackResult) => void;
+  enqueueAlbum: (album: PlayingAlbum, tracks: TrackResult[]) => void;
   removeFromQueue: (videoId: string) => void;
+  removeAlbumFromQueue: (albumMbid: string) => void;
+  clearQueue: () => void;
   moveInQueue: (videoId: string, dir: -1 | 1) => void;
   advanceQueue: () => void;
 };
+
+function toQueueItem(album: PlayingAlbum, r: TrackResult): QueueItem {
+  return {
+    ...r,
+    albumMbid: album.mbid,
+    albumTitle: album.title,
+    albumArtist: album.artist,
+    albumCoverUrl: album.coverUrl,
+  };
+}
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
   album: undefined,
@@ -56,8 +78,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
   position: 0,
   duration: 0,
   error: undefined,
-  results: [],
-  resultsLoading: false,
+  tracks: [],
+  tracksLoading: false,
   queue: [],
   currentVideoId: undefined,
 
@@ -69,9 +91,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
       position: 0,
       duration: 0,
       error: undefined,
-      results: [],
-      resultsLoading: true,
-      queue: [],
+      tracks: [],
+      tracksLoading: true,
       currentVideoId: undefined,
     }),
   pause: () => set({ isPlaying: false, phase: 'paused' }),
@@ -96,8 +117,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
       phase: error ? 'error' : state.phase === 'error' ? 'idle' : state.phase,
     })),
 
-  setResults: (results) => set({ results, resultsLoading: false }),
-  setResultsLoading: (resultsLoading) => set({ resultsLoading }),
+  setTracks: (tracks) => set({ tracks, tracksLoading: false }),
+  setTracksLoading: (tracksLoading) => set({ tracksLoading }),
   setCurrentVideoId: (currentVideoId) => set({ currentVideoId }),
   playVideoNow: (r) =>
     set((s) => ({
@@ -111,12 +132,24 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
     })),
   enqueue: (r) =>
     set((s) => {
+      if (!s.album) return s;
       if (r.videoId === s.currentVideoId) return s;
       if (s.queue.some((q) => q.videoId === r.videoId)) return s;
-      return { queue: [...s.queue, r] };
+      return { queue: [...s.queue, toQueueItem(s.album, r)] };
+    }),
+  enqueueAlbum: (album, tracks) =>
+    set((s) => {
+      const have = new Set(s.queue.map((q) => q.videoId));
+      const additions = tracks
+        .filter((t) => !have.has(t.videoId))
+        .map((t) => toQueueItem(album, t));
+      return { queue: [...s.queue, ...additions] };
     }),
   removeFromQueue: (videoId) =>
     set((s) => ({ queue: s.queue.filter((q) => q.videoId !== videoId) })),
+  removeAlbumFromQueue: (albumMbid) =>
+    set((s) => ({ queue: s.queue.filter((q) => q.albumMbid !== albumMbid) })),
+  clearQueue: () => set({ queue: [] }),
   moveInQueue: (videoId, dir) =>
     set((s) => {
       const i = s.queue.findIndex((q) => q.videoId === videoId);

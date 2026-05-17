@@ -3,10 +3,13 @@ import { usePlayerStore } from '../state/playerStore';
 import {
   createPlayer,
   searchAlbumVideos,
+  resolveAlbumTrackVideos,
   MissingYouTubeKeyError,
   PLAYER_STATE,
   type PlayerHandle,
+  type TrackResult,
 } from '../services/youtubePlayer';
+import { getAlbumTracks } from '../services/musicbrainz';
 
 // Mounts a hidden YouTube IFrame Player and drives it from the playerStore.
 // The iframe needs a real size and must stay in the render tree (not
@@ -28,9 +31,10 @@ export function HiddenYouTube() {
   const setProgress = usePlayerStore((s) => s.setProgress);
   const setError = usePlayerStore((s) => s.setError);
   const setPhase = usePlayerStore((s) => s.setPhase);
-  const setResults = usePlayerStore((s) => s.setResults);
-  const setResultsLoading = usePlayerStore((s) => s.setResultsLoading);
+  const setTracks = usePlayerStore((s) => s.setTracks);
+  const setTracksLoading = usePlayerStore((s) => s.setTracksLoading);
   const setCurrentVideoId = usePlayerStore((s) => s.setCurrentVideoId);
+  const enqueueAlbum = usePlayerStore((s) => s.enqueueAlbum);
   const advanceQueue = usePlayerStore((s) => s.advanceQueue);
 
   // Init player once.
@@ -86,8 +90,8 @@ export function HiddenYouTube() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When a new album becomes the target, fetch ALL YouTube candidates and
-  // auto-select the first as the current video.
+  // When a new album becomes the target, resolve its tracks to official
+  // (Topic-channel) videos, enqueue the whole album, and start track 1.
   useEffect(() => {
     cancelRef.current?.abort();
     if (!album) {
@@ -97,20 +101,48 @@ export function HiddenYouTube() {
     const ac = new AbortController();
     cancelRef.current = ac;
     setError(undefined);
-    setResultsLoading(true);
-    searchAlbumVideos(album.artist, album.title, ac.signal)
+    setTracksLoading(true);
+
+    (async (): Promise<TrackResult[]> => {
+      const mbTracks = await getAlbumTracks(album.mbid, ac.signal);
+      if (mbTracks.length > 0) {
+        const resolved = await resolveAlbumTrackVideos(
+          album.artist,
+          mbTracks,
+          ac.signal,
+        );
+        if (resolved.length > 0) return resolved;
+      }
+      // No tracklist (or nothing resolved): fall back to the legacy
+      // whole-album video so the sleeve still plays.
+      const videos = await searchAlbumVideos(
+        album.artist,
+        album.title,
+        ac.signal,
+      );
+      return videos.slice(0, 1).map((v) => ({
+        ...v,
+        trackNo: 1,
+        trackTitle: album.title,
+        official: false,
+      }));
+    })()
       .then((results) => {
         if (ac.signal.aborted) return;
-        setResults(results);
+        setTracks(results);
         if (results.length === 0) {
           setError('No YouTube result found for this album.');
           return;
         }
+        // Play track 1; queue the rest of the album so it auto-advances.
+        // Phase stays 'flying' so the sleeve animation completes and drives
+        // the transition to 'playing' itself (see PlayingSleeve).
         setCurrentVideoId(results[0].videoId);
+        enqueueAlbum(album, results.slice(1));
       })
       .catch((err: unknown) => {
         if (ac.signal.aborted) return;
-        setResultsLoading(false);
+        setTracksLoading(false);
         if (err instanceof MissingYouTubeKeyError) {
           setError(
             'Set VITE_YOUTUBE_API_KEY in .env.local to enable playback. See docs/youtube-api-key.md.',
@@ -120,7 +152,14 @@ export function HiddenYouTube() {
         const msg = err instanceof Error ? err.message : 'Search failed.';
         setError(msg);
       });
-  }, [album, setError, setResults, setResultsLoading, setCurrentVideoId]);
+  }, [
+    album,
+    setError,
+    setTracks,
+    setTracksLoading,
+    setCurrentVideoId,
+    enqueueAlbum,
+  ]);
 
   // Load whatever the store says is the current video. This single path serves
   // the initial pick, manual swaps from the panel, and queue auto-advance.
@@ -146,8 +185,8 @@ export function HiddenYouTube() {
           phase: 'idle',
           position: 0,
           duration: 0,
-          results: [],
-          resultsLoading: false,
+          tracks: [],
+          tracksLoading: false,
           queue: [],
           currentVideoId: undefined,
         });

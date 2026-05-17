@@ -55,6 +55,80 @@ function pickYear(date: string | undefined): number | undefined {
   return m ? parseInt(m[1], 10) : undefined;
 }
 
+export type AlbumTrack = {
+  position: number;
+  title: string;
+  lengthMs?: number;
+};
+
+type MBTrack = {
+  position?: number;
+  number?: string;
+  title?: string;
+  length?: number | null;
+  recording?: { title?: string; length?: number | null };
+};
+
+type MBRelease = {
+  id: string;
+  status?: string | null;
+  date?: string;
+  media?: { tracks?: MBTrack[] }[];
+};
+
+type MBReleaseBrowseResponse = {
+  releases?: MBRelease[];
+};
+
+function releaseTrackCount(r: MBRelease): number {
+  return (r.media ?? []).reduce((n, m) => n + (m.tracks?.length ?? 0), 0);
+}
+
+/**
+ * Returns the ordered tracklist for a release-group by picking its most
+ * representative release (official, with tracks, earliest dated) and flattening
+ * every medium. Returns [] when MusicBrainz has no usable tracklist so callers
+ * can fall back to a whole-album search.
+ */
+export async function getAlbumTracks(
+  mbid: string,
+  signal?: AbortSignal,
+): Promise<AlbumTrack[]> {
+  const url =
+    `${MB_BASE}/release?release-group=${encodeURIComponent(mbid)}` +
+    `&inc=recordings+media&fmt=json&limit=25`;
+  const res = await throttledFetch(url, signal);
+  if (!res.ok) throw new Error(`MusicBrainz error: ${res.status}`);
+  const data = (await res.json()) as MBReleaseBrowseResponse;
+  const releases = (data.releases ?? []).filter((r) => releaseTrackCount(r) > 0);
+  if (releases.length === 0) return [];
+
+  releases.sort((a, b) => {
+    const aOfficial = a.status === 'Official' ? 0 : 1;
+    const bOfficial = b.status === 'Official' ? 0 : 1;
+    if (aOfficial !== bOfficial) return aOfficial - bOfficial;
+    return (a.date || '9999') < (b.date || '9999') ? -1 : 1;
+  });
+
+  const chosen = releases[0];
+  const tracks: AlbumTrack[] = [];
+  let seq = 0;
+  for (const medium of chosen.media ?? []) {
+    for (const t of medium.tracks ?? []) {
+      seq += 1;
+      const title = t.title || t.recording?.title || '';
+      if (!title) continue;
+      const length = t.length ?? t.recording?.length ?? undefined;
+      tracks.push({
+        position: t.position ?? seq,
+        title,
+        lengthMs: typeof length === 'number' ? length : undefined,
+      });
+    }
+  }
+  return tracks;
+}
+
 export async function searchAlbums(query: string, signal?: AbortSignal): Promise<SearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { usePlayerStore } from '../state/playerStore';
 import { ResultsQueuePanel } from './ResultsQueuePanel';
+import { QueuePanel } from './QueuePanel';
 
 function formatTime(seconds: number) {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
@@ -20,7 +21,13 @@ export function PlayerBar() {
   const resume = usePlayerStore((s) => s.resume);
   const stop = usePlayerStore((s) => s.stop);
   const queueCount = usePlayerStore((s) => s.queue.length);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // 'results' and 'queue' panels share the same slot above the bar, so only
+  // one is open at a time.
+  const [openPanel, setOpenPanel] = useState<'none' | 'results' | 'queue'>(
+    'none',
+  );
+  const toggle = (p: 'results' | 'queue') =>
+    setOpenPanel((cur) => (cur === p ? 'none' : p));
 
   if (!album) return null;
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;
@@ -32,23 +39,31 @@ export function PlayerBar() {
 
   return (
     <>
-      <ResultsQueuePanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+      <ResultsQueuePanel
+        open={openPanel === 'results'}
+        onClose={() => setOpenPanel('none')}
+      />
+      <QueuePanel
+        open={openPanel === 'queue'}
+        onClose={() => setOpenPanel('none')}
+      />
 
-      {/* ▲ toggle: bottom-left, just above the media bar. */}
-      <button
-        onClick={() => setPanelOpen((v) => !v)}
-        aria-label={panelOpen ? 'Hide YouTube results' : 'Show YouTube results'}
-        title="YouTube results & queue"
-        className="pointer-events-auto absolute bottom-[5.25rem] left-4 z-30 flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-neutral-950/85 px-3 text-amber-100 shadow-lg backdrop-blur-xl hover:bg-neutral-900"
-      >
-        <span className="text-xs leading-none">{panelOpen ? '▼' : '▲'}</span>
-        <span className="text-[11px] font-medium">Results</span>
-        {queueCount > 0 && (
-          <span className="rounded-full bg-amber-300 px-1.5 text-[10px] font-semibold text-neutral-900">
-            {queueCount}
+      {/* Toggles: bottom-left, just above the media bar. */}
+      <div className="pointer-events-auto absolute bottom-[5.25rem] left-4 z-30 flex items-center gap-2">
+        <button
+          onClick={() => toggle('results')}
+          aria-label={
+            openPanel === 'results' ? 'Hide tracks' : 'Show tracks'
+          }
+          title="Album tracks"
+          className="flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-neutral-950/85 px-3 text-amber-100 shadow-lg backdrop-blur-xl hover:bg-neutral-900"
+        >
+          <span className="text-xs leading-none">
+            {openPanel === 'results' ? '▼' : '▲'}
           </span>
-        )}
-      </button>
+          <span className="text-[11px] font-medium">Tracks</span>
+        </button>
+      </div>
 
       <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex h-20 items-center gap-4 border-t border-white/10 bg-neutral-950/85 px-4 backdrop-blur-xl">
       <img
@@ -70,6 +85,22 @@ export function PlayerBar() {
           <span className="tabular-nums">{formatTime(duration)}</span>
         </div>
       </div>
+      <button
+        onClick={() => toggle('queue')}
+        aria-label={openPanel === 'queue' ? 'Hide queue' : 'Show queue'}
+        title="Play queue"
+        className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-3 text-amber-100 hover:bg-white/20"
+      >
+        <span className="text-xs leading-none">
+          {openPanel === 'queue' ? '▼' : '▲'}
+        </span>
+        <span className="text-[11px] font-medium">Queue</span>
+        {queueCount > 0 && (
+          <span className="rounded-full bg-amber-300 px-1.5 text-[10px] font-semibold text-neutral-900">
+            {queueCount}
+          </span>
+        )}
+      </button>
       <div className="flex flex-shrink-0 items-center gap-2">
         {isPlaying ? (
           <button
