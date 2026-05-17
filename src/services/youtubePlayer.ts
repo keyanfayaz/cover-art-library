@@ -43,6 +43,9 @@ type YTPlayer = {
   getCurrentTime: () => number;
   getDuration: () => number;
   setVolume: (v: number) => void;
+  mute: () => void;
+  unMute: () => void;
+  isMuted: () => boolean;
   destroy: () => void;
 };
 
@@ -85,57 +88,69 @@ export class MissingYouTubeKeyError extends Error {
 }
 
 type YTSearchResponse = {
-  items?: { id?: { videoId?: string }; snippet?: { title?: string } }[];
+  items?: {
+    id?: { videoId?: string };
+    snippet?: {
+      title?: string;
+      channelTitle?: string;
+      thumbnails?: Record<string, { url?: string } | undefined>;
+    };
+  }[];
   error?: { code: number; message: string; errors?: { reason: string }[] };
 };
 
+export type YouTubeResult = {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  thumbnailUrl: string;
+};
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, '&')
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
 /**
- * Resolves an artist+album to a YouTube videoId using the official Data API v3.
- * Throws MissingYouTubeKeyError if the key isn't configured so the UI can show
- * a setup-needed message rather than a generic failure.
+ * Searches YouTube for every plausible upload of an album using the official
+ * Data API v3. Returns up to 25 results so the user can pick/swap the right
+ * one. Throws MissingYouTubeKeyError if the key isn't configured so the UI can
+ * show a setup-needed message rather than a generic failure.
+ *
+ * search.list costs 100 quota units regardless of maxResults, so fetching 25
+ * is the same cost as fetching 5.
  */
-export async function findVideoIdForAlbum(
+export async function searchAlbumVideos(
   artist: string,
   title: string,
   signal?: AbortSignal,
-): Promise<string | null> {
+): Promise<YouTubeResult[]> {
   const apiKey = import.meta.env.VITE_YOUTUBE_API_KEY as string | undefined;
   if (!apiKey) {
     throw new MissingYouTubeKeyError();
   }
-  const q = `${artist} ${title} full album`;
   const params = new URLSearchParams({
     part: 'snippet',
-    q,
+    q: `${artist} ${title} full album`,
     type: 'video',
-    maxResults: '5',
-    // Prefer longer uploads (full albums are usually >20 min) when available.
-    videoDuration: 'long',
+    maxResults: '25',
     key: apiKey,
   });
-  const url = `https://www.googleapis.com/youtube/v3/search?${params.toString()}`;
-  const res = await fetch(url, {
-    signal: signal ?? AbortSignal.timeout(7000),
-  });
+  const res = await fetch(
+    `https://www.googleapis.com/youtube/v3/search?${params.toString()}`,
+    { signal: signal ?? AbortSignal.timeout(7000) },
+  );
   if (!res.ok) {
-    // Try once more without the long-duration filter — some albums are bundled
-    // as a single video that YouTube classifies as "medium".
-    if (res.status === 400 || res.status === 404) {
-      params.delete('videoDuration');
-      const retry = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?${params.toString()}`,
-        { signal: signal ?? AbortSignal.timeout(7000) },
-      );
-      if (!retry.ok) return null;
-      const data = (await retry.json()) as YTSearchResponse;
-      return data.items?.[0]?.id?.videoId ?? null;
-    }
-    // 403 / quota exceeded / key issues: surface specifics for the user.
+    // Surface quota / key / auth specifics so the UI can explain the failure.
     let body: YTSearchResponse | undefined;
     try {
       body = (await res.json()) as YTSearchResponse;
     } catch {
-      // ignore
+      // ignore parse errors
     }
     const reason = body?.error?.errors?.[0]?.reason;
     throw new Error(
@@ -145,17 +160,39 @@ export async function findVideoIdForAlbum(
     );
   }
   const data = (await res.json()) as YTSearchResponse;
-  // First long video wins; if nothing matched "long", drop the filter once.
-  const found = data.items?.find((i) => i.id?.videoId)?.id?.videoId;
-  if (found) return found;
-  params.delete('videoDuration');
-  const retry = await fetch(
-    `https://www.googleapis.com/youtube/v3/search?${params.toString()}`,
-    { signal: signal ?? AbortSignal.timeout(7000) },
-  );
-  if (!retry.ok) return null;
-  const retryData = (await retry.json()) as YTSearchResponse;
-  return retryData.items?.[0]?.id?.videoId ?? null;
+  const seen = new Set<string>();
+  const out: YouTubeResult[] = [];
+  for (const item of data.items ?? []) {
+    const videoId = item.id?.videoId;
+    if (!videoId || seen.has(videoId)) continue;
+    seen.add(videoId);
+    const sn = item.snippet ?? {};
+    const thumb =
+      sn.thumbnails?.medium?.url ??
+      sn.thumbnails?.default?.url ??
+      sn.thumbnails?.high?.url ??
+      '';
+    out.push({
+      videoId,
+      title: decodeEntities(sn.title ?? 'Untitled'),
+      channelTitle: decodeEntities(sn.channelTitle ?? ''),
+      thumbnailUrl: thumb,
+    });
+  }
+  return out;
+}
+
+/**
+ * Convenience wrapper kept for existing callers: returns the first result's
+ * videoId (or null). Delegates to searchAlbumVideos.
+ */
+export async function findVideoIdForAlbum(
+  artist: string,
+  title: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const results = await searchAlbumVideos(artist, title, signal);
+  return results[0]?.videoId ?? null;
 }
 
 export type PlayerHandle = {
@@ -165,13 +202,15 @@ export type PlayerHandle = {
   pause: () => void;
   stop: () => void;
   setVolume: (v: number) => void;
+  mute: () => void;
+  unMute: () => void;
   getTime: () => { position: number; duration: number };
   destroy: () => void;
   onState: (cb: (state: number) => void) => () => void;
   onError: (cb: (code: number) => void) => () => void;
 };
 
-export async function createPlayer(target: HTMLElement): Promise<PlayerHandle> {
+export async function createPlayer(container: HTMLElement): Promise<PlayerHandle> {
   await loadAPI();
   if (!window.YT?.Player) throw new Error('YouTube IFrame API failed to load');
 
@@ -180,12 +219,27 @@ export async function createPlayer(target: HTMLElement): Promise<PlayerHandle> {
 
   let player: YTPlayer | null = null;
 
+  // YT.Player REPLACES the element it's given with an <iframe>. If we passed
+  // the React-managed ref element directly, React StrictMode's
+  // mount→cleanup→mount cycle would leave the surviving player attached to a
+  // detached element (iframe never in the document → YouTube won't play).
+  // Instead we append our own throwaway slot to a stable container; YT swaps
+  // the slot for an iframe that stays inside the still-attached container.
+  const slot = document.createElement('div');
+  container.appendChild(slot);
+
   await new Promise<void>((resolve) => {
-    player = new window.YT!.Player(target, {
-      width: 1,
-      height: 1,
+    player = new window.YT!.Player(slot, {
+      // A real (non-1×1) size is required — YouTube refuses to start playback
+      // in a 1×1 / zero-size player. The host element is moved off-screen by
+      // the caller so it stays invisible.
+      width: 320,
+      height: 180,
       playerVars: {
-        autoplay: 0,
+        // Muted autoplay is always allowed by browsers, even outside a user
+        // gesture; we unmute once playback actually starts (see HiddenYouTube).
+        autoplay: 1,
+        mute: 1,
         controls: 0,
         disablekb: 1,
         fs: 0,
@@ -209,6 +263,8 @@ export async function createPlayer(target: HTMLElement): Promise<PlayerHandle> {
     pause: () => player?.pauseVideo(),
     stop: () => player?.stopVideo(),
     setVolume: (v) => player?.setVolume(v),
+    mute: () => player?.mute(),
+    unMute: () => player?.unMute(),
     getTime: () => {
       try {
         const position = player?.getCurrentTime() ?? 0;

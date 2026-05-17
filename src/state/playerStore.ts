@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { YouTubeResult } from '../services/youtubePlayer';
 
 export type PlayingAlbum = {
   mbid: string;
@@ -20,6 +21,12 @@ type PlayerState = {
   position: number;
   duration: number;
   error?: string;
+  // All YouTube candidates for the current album, plus the queue the user
+  // builds from them. `currentVideoId` is the one actually loaded in the player.
+  results: YouTubeResult[];
+  resultsLoading: boolean;
+  queue: YouTubeResult[];
+  currentVideoId?: string;
 };
 
 type PlayerActions = {
@@ -31,6 +38,15 @@ type PlayerActions = {
   setIsPlaying: (v: boolean) => void;
   setProgress: (position: number, duration: number) => void;
   setError: (err: string | undefined) => void;
+  // Results / queue.
+  setResults: (results: YouTubeResult[]) => void;
+  setResultsLoading: (v: boolean) => void;
+  setCurrentVideoId: (id: string | undefined) => void;
+  playVideoNow: (r: YouTubeResult) => void;
+  enqueue: (r: YouTubeResult) => void;
+  removeFromQueue: (videoId: string) => void;
+  moveInQueue: (videoId: string, dir: -1 | 1) => void;
+  advanceQueue: () => void;
 };
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
@@ -40,6 +56,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
   position: 0,
   duration: 0,
   error: undefined,
+  results: [],
+  resultsLoading: false,
+  queue: [],
+  currentVideoId: undefined,
 
   play: (album) =>
     set({
@@ -49,6 +69,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
       position: 0,
       duration: 0,
       error: undefined,
+      results: [],
+      resultsLoading: true,
+      queue: [],
+      currentVideoId: undefined,
     }),
   pause: () => set({ isPlaying: false, phase: 'paused' }),
   resume: () => set({ isPlaying: true, phase: 'playing' }),
@@ -71,4 +95,49 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set) => ({
       // current phase alone (unless we're already in 'error', then go idle).
       phase: error ? 'error' : state.phase === 'error' ? 'idle' : state.phase,
     })),
+
+  setResults: (results) => set({ results, resultsLoading: false }),
+  setResultsLoading: (resultsLoading) => set({ resultsLoading }),
+  setCurrentVideoId: (currentVideoId) => set({ currentVideoId }),
+  playVideoNow: (r) =>
+    set((s) => ({
+      currentVideoId: r.videoId,
+      isPlaying: false,
+      // If the user picks a queued item directly, drop it from the queue.
+      queue: s.queue.filter((q) => q.videoId !== r.videoId),
+      // Recover from an error state when the user manually picks a video.
+      phase: s.phase === 'error' || s.phase === 'idle' ? 'playing' : s.phase,
+      error: undefined,
+    })),
+  enqueue: (r) =>
+    set((s) => {
+      if (r.videoId === s.currentVideoId) return s;
+      if (s.queue.some((q) => q.videoId === r.videoId)) return s;
+      return { queue: [...s.queue, r] };
+    }),
+  removeFromQueue: (videoId) =>
+    set((s) => ({ queue: s.queue.filter((q) => q.videoId !== videoId) })),
+  moveInQueue: (videoId, dir) =>
+    set((s) => {
+      const i = s.queue.findIndex((q) => q.videoId === videoId);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= s.queue.length) return s;
+      const next = s.queue.slice();
+      [next[i], next[j]] = [next[j], next[i]];
+      return { queue: next };
+    }),
+  advanceQueue: () =>
+    set((s) => {
+      if (s.queue.length > 0) {
+        const [nextItem, ...rest] = s.queue;
+        return {
+          queue: rest,
+          currentVideoId: nextItem.videoId,
+          isPlaying: false,
+          phase: 'playing',
+        };
+      }
+      // Nothing queued — wind the record down like a manual stop.
+      return { phase: 'stopping', isPlaying: false };
+    }),
 }));

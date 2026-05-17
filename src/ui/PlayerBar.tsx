@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { usePlayerStore } from '../state/playerStore';
+import { ResultsQueuePanel } from './ResultsQueuePanel';
 
 function formatTime(seconds: number) {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
@@ -17,6 +19,8 @@ export function PlayerBar() {
   const pause = usePlayerStore((s) => s.pause);
   const resume = usePlayerStore((s) => s.resume);
   const stop = usePlayerStore((s) => s.stop);
+  const queueCount = usePlayerStore((s) => s.queue.length);
+  const [panelOpen, setPanelOpen] = useState(false);
 
   if (!album) return null;
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;
@@ -27,7 +31,26 @@ export function PlayerBar() {
   else if (error) statusText = error;
 
   return (
-    <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex h-20 items-center gap-4 border-t border-white/10 bg-neutral-950/85 px-4 backdrop-blur-xl">
+    <>
+      <ResultsQueuePanel open={panelOpen} onClose={() => setPanelOpen(false)} />
+
+      {/* ▲ toggle: bottom-left, just above the media bar. */}
+      <button
+        onClick={() => setPanelOpen((v) => !v)}
+        aria-label={panelOpen ? 'Hide YouTube results' : 'Show YouTube results'}
+        title="YouTube results & queue"
+        className="pointer-events-auto absolute bottom-[5.25rem] left-4 z-30 flex h-8 items-center gap-1.5 rounded-full border border-white/10 bg-neutral-950/85 px-3 text-amber-100 shadow-lg backdrop-blur-xl hover:bg-neutral-900"
+      >
+        <span className="text-xs leading-none">{panelOpen ? '▼' : '▲'}</span>
+        <span className="text-[11px] font-medium">Results</span>
+        {queueCount > 0 && (
+          <span className="rounded-full bg-amber-300 px-1.5 text-[10px] font-semibold text-neutral-900">
+            {queueCount}
+          </span>
+        )}
+      </button>
+
+      <div className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex h-20 items-center gap-4 border-t border-white/10 bg-neutral-950/85 px-4 backdrop-blur-xl">
       <img
         src={album.coverUrl}
         alt=""
@@ -73,6 +96,7 @@ export function PlayerBar() {
           ■
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
