@@ -52,7 +52,7 @@ export function QueuePanel({ open, onClose }: Props) {
     setCollapsed((c) => ({ ...c, [key]: !c[key] }));
 
   return (
-    <div className="pointer-events-auto absolute inset-x-0 bottom-20 z-20 mx-auto flex max-h-[55vh] max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-neutral-950/90 backdrop-blur-xl">
+    <div className="pointer-events-auto absolute inset-x-0 bottom-20 z-20 mx-auto flex h-[55vh] max-w-3xl flex-col overflow-hidden rounded-t-2xl border border-white/10 bg-neutral-950/90 backdrop-blur-xl">
       <div className="flex flex-shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
         <div className="min-w-0">
           <div className="text-[10px] uppercase tracking-widest text-amber-100/50">
@@ -81,7 +81,7 @@ export function QueuePanel({ open, onClose }: Props) {
         </div>
       </div>
 
-      <div className="overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {queue.length === 0 ? (
           <div className="px-4 py-6 text-sm text-amber-100/60">
             Queue is empty. Add tracks or queue an album from the Tracks panel.
