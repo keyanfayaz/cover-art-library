@@ -4,7 +4,16 @@ An interactive 3D web app: walk into a cozy listening room, hang album art on
 the walls, and click a record to drop it on the turntable and play it. Swap the
 view outside the windows between three moods, including a full disco mode.
 
+**This is just for fun** — it's meant to be left open in a tab while you work
+or chill: a calm little room with your music playing and a view outside.
+
+The **highlight is the album wall art** — curating a wall of cover art you love
+is the heart of the app; everything else (the room, the turntable, the themes)
+is the backdrop for it.
+
 Built with React Three Fiber. Everything runs locally — no backend.
+
+![A wall of album cover art in the Stacks 3D listening room](docs/screenshot.jpg)
 
 ## Features
 
