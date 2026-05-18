@@ -3,29 +3,22 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import * as THREE from 'three';
-import { useFocusStore } from '../state/focusStore';
-import { useLibraryStore } from '../state/libraryStore';
-import { ROOM_CAMERA, focusCameraTarget, gridTransform } from '../lib/geometry';
+import { useNavStore } from '../state/navStore';
+import { WALL_CAMERA, ROOM_CAMERA } from '../lib/geometry';
 import { dampVec3 } from '../lib/tween';
 
 export function CameraRig() {
   const { camera } = useThree();
   const controls = useRef<OrbitControlsImpl>(null);
-  const view = useFocusStore((s) => s.view);
-  const gridId = useFocusStore((s) => s.gridId);
-  const returnToRoom = useFocusStore((s) => s.returnToRoom);
-  const grids = useLibraryStore((s) => s.grids);
+  const view = useNavStore((s) => s.view);
+  const returnToRoom = useNavStore((s) => s.returnToRoom);
 
   const target = useMemo(() => {
-    if (view === 'grid' && gridId) {
-      const grid = grids.find((g) => g.id === gridId);
-      if (grid) {
-        const t = gridTransform(grid.wall, grid.rows, grid.cols);
-        return focusCameraTarget(t);
-      }
+    if (view === 'wall') {
+      return { position: WALL_CAMERA.position.clone(), lookAt: WALL_CAMERA.lookAt.clone() };
     }
     return { position: ROOM_CAMERA.position.clone(), lookAt: ROOM_CAMERA.lookAt.clone() };
-  }, [view, gridId, grids]);
+  }, [view]);
 
   const lookAtCurrent = useRef(new THREE.Vector3().copy(ROOM_CAMERA.lookAt));
 
@@ -43,13 +36,13 @@ export function CameraRig() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && view === 'grid') returnToRoom();
+      if (e.key === 'Escape' && view === 'wall') returnToRoom();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [view, returnToRoom]);
 
-  const focused = view === 'grid';
+  const focused = view === 'wall';
 
   return (
     <OrbitControls

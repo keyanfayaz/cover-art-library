@@ -1,6 +1,5 @@
-import { useLibraryStore } from '../state/libraryStore';
 import { Room } from './Room';
-import { WallGrid } from './WallGrid';
+import { PageWall } from './PageWall';
 import { Furniture } from './Furniture';
 import { Lighting } from './Lighting';
 import { CameraRig } from './CameraRig';
@@ -10,16 +9,13 @@ import { DiscoLights } from './DiscoLights';
 import { DanceFloor } from './DanceFloor';
 
 export function Library() {
-  const grids = useLibraryStore((s) => s.grids);
   return (
     <>
       <Sky />
       <Lighting />
       <Room />
       <Furniture />
-      {grids.map((grid) => (
-        <WallGrid key={grid.id} grid={grid} />
-      ))}
+      <PageWall />
       <PlayingSleeve />
       <DiscoLights />
       <DanceFloor />

@@ -6,8 +6,8 @@ export type PlayingAlbum = {
   title: string;
   artist: string;
   coverUrl: string;
-  // Source location on a wall, used to animate the sleeve flying onto the turntable.
-  sourceGridId: string;
+  // Source location on a page, used to animate the sleeve flying onto the turntable.
+  sourcePageId: string;
   sourceRow: number;
   sourceCol: number;
 };

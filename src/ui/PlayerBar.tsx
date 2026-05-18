@@ -35,7 +35,7 @@ export function PlayerBar() {
   let statusText = album.artist;
   if (phase === 'flying' || phase === 'landing') statusText = `Cueing up… · ${album.artist}`;
   else if (phase === 'stopping') statusText = `Lifting needle… · ${album.artist}`;
-  else if (error) statusText = error;
+  else if (error && phase !== 'playing') statusText = error;
 
   return (
     <>

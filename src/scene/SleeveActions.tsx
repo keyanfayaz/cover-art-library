@@ -2,7 +2,7 @@ import { Html } from '@react-three/drei';
 import { useLibraryStore } from '../state/libraryStore';
 
 type Props = {
-  gridId: string;
+  pageId: string;
   row: number;
   col: number;
   onChipEnter?: () => void;
@@ -11,12 +11,12 @@ type Props = {
 
 // Small ✕ button shown in the top-right corner of a placed sleeve on hover.
 // Clicking it removes the album from the slot (slot becomes empty).
-export function SleeveActions({ gridId, row, col, onChipEnter, onChipLeave }: Props) {
+export function SleeveActions({ pageId, row, col, onChipEnter, onChipLeave }: Props) {
   const setSlotAlbum = useLibraryStore((s) => s.setSlotAlbum);
 
   const onDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setSlotAlbum(gridId, row, col, undefined);
+    setSlotAlbum(pageId, row, col, undefined);
   };
 
   return (

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { DEFAULT_GRIDS, type WallId } from '../lib/geometry';
+import { PAGE_ROWS, PAGE_COLS } from '../lib/geometry';
 
 export type Album = {
   mbid: string;
@@ -16,19 +16,14 @@ export type Slot = {
   album?: Album;
 };
 
-export type WallGrid = {
+export type Page = {
   id: string;
-  label: string;
-  wall: WallId;
-  rows: number;
-  cols: number;
   slots: Slot[];
 };
 
 export type Library = {
-  version: 2;
-  grids: WallGrid[];
-  homeGridId?: string;
+  version: 3;
+  pages: Page[];
 };
 
 function makeSlots(rows: number, cols: number): Slot[] {
@@ -41,21 +36,19 @@ function makeSlots(rows: number, cols: number): Slot[] {
   return slots;
 }
 
+function makePage(): Page {
+  return { id: crypto.randomUUID(), slots: makeSlots(PAGE_ROWS, PAGE_COLS) };
+}
+
 const defaultLibrary: Library = {
-  version: 2,
-  grids: DEFAULT_GRIDS.map((g) => ({
-    id: g.id,
-    label: g.label,
-    wall: g.wall,
-    rows: g.rows,
-    cols: g.cols,
-    slots: makeSlots(g.rows, g.cols),
-  })),
+  version: 3,
+  pages: [makePage()],
 };
 
 type LibraryActions = {
-  setSlotAlbum: (gridId: string, row: number, col: number, album: Album | undefined) => void;
-  setHomeGrid: (gridId: string | undefined) => void;
+  setSlotAlbum: (pageId: string, row: number, col: number, album: Album | undefined) => void;
+  addPage: () => void;
+  removePage: (pageId: string) => void;
   resetLibrary: () => void;
 };
 
@@ -63,29 +56,38 @@ export const useLibraryStore = create<Library & LibraryActions>()(
   persist(
     (set) => ({
       ...defaultLibrary,
-      setSlotAlbum: (gridId, row, col, album) =>
+      setSlotAlbum: (pageId, row, col, album) =>
         set((state) => ({
-          grids: state.grids.map((grid) =>
-            grid.id === gridId
+          pages: state.pages.map((page) =>
+            page.id === pageId
               ? {
-                  ...grid,
-                  slots: grid.slots.map((slot) =>
+                  ...page,
+                  slots: page.slots.map((slot) =>
                     slot.row === row && slot.col === col ? { ...slot, album } : slot,
                   ),
                 }
-              : grid,
+              : page,
           ),
         })),
-      setHomeGrid: (gridId) => set({ homeGridId: gridId }),
-      resetLibrary: () => set({ ...defaultLibrary, homeGridId: undefined }),
+      addPage: () => set((state) => ({ pages: [...state.pages, makePage()] })),
+      removePage: (pageId) =>
+        set((state) => {
+          // The first page is the permanent default and can never be removed,
+          // and there must always be at least one page.
+          if (state.pages.length <= 1 || state.pages[0]?.id === pageId) {
+            return state;
+          }
+          return { pages: state.pages.filter((p) => p.id !== pageId) };
+        }),
+      resetLibrary: () => set({ ...defaultLibrary, pages: [makePage()] }),
     }),
     {
-      name: 'cal:library:v2',
-      version: 2,
+      name: 'cal:library:v3',
+      version: 3,
     },
   ),
 );
 
-export function libraryHasAnyAlbum(library: { grids: WallGrid[] }): boolean {
-  return library.grids.some((g) => g.slots.some((slot) => slot.album));
+export function libraryHasAnyAlbum(library: { pages: Page[] }): boolean {
+  return library.pages.some((p) => p.slots.some((slot) => slot.album));
 }

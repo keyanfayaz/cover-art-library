@@ -60,6 +60,10 @@ export function HiddenYouTube() {
             // album is audible without a second click.
             handle.unMute();
             handle.setVolume(80);
+            // Playback actually started — clear any stale error from an
+            // earlier track/video that failed but recovered (e.g. a queued
+            // video that 404'd while this one plays fine).
+            setError(undefined);
             setIsPlaying(true);
             setPhase('playing');
           } else if (state === PLAYER_STATE.PAUSED) {
@@ -76,6 +80,10 @@ export function HiddenYouTube() {
           }
         });
         handle.onError(() => {
+          // Ignore errors while a track is already playing — they come from
+          // a transient glitch or a queued video that will be skipped, not
+          // the audible track.
+          if (usePlayerStore.getState().phase === 'playing') return;
           setError('Could not play this album from YouTube. Try a different sleeve.');
         });
       })

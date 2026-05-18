@@ -20,7 +20,7 @@ const D = FRAME.depth;
 function PlayingSleeveInner({ album }: { album: PlayingAlbum }) {
   const phase = usePlayerStore((s) => s.phase);
   const setPhase = usePlayerStore((s) => s.setPhase);
-  const grids = useLibraryStore((s) => s.grids);
+  const pages = useLibraryStore((s) => s.pages);
 
   const groupRef = useRef<THREE.Group>(null);
   const opacityRef = useRef(0);
@@ -28,16 +28,10 @@ function PlayingSleeveInner({ album }: { album: PlayingAlbum }) {
   const lastPhaseRef = useRef(phase);
 
   const sourceInfo = useMemo(() => {
-    const grid = grids.find((g) => g.id === album.sourceGridId);
-    if (!grid) return null;
-    return slotWorldPosition(
-      grid.wall,
-      grid.rows,
-      grid.cols,
-      album.sourceRow,
-      album.sourceCol,
-    );
-  }, [album.sourceGridId, album.sourceRow, album.sourceCol, grids]);
+    const page = pages.find((p) => p.id === album.sourcePageId);
+    if (!page) return null;
+    return slotWorldPosition(album.sourceRow, album.sourceCol);
+  }, [album.sourcePageId, album.sourceRow, album.sourceCol, pages]);
 
   // Load texture defensively. If the cover URL fails (CORS, 404, bad URL),
   // we keep `texture` null and fall back to a plain dark sleeve — never throwing

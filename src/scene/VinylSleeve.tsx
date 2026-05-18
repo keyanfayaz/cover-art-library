@@ -14,15 +14,13 @@ const D = FRAME.depth;
 type Props = {
   album: Album;
   position: [number, number, number];
-  gridId: string;
+  pageId: string;
   row: number;
   col: number;
-  // Picker callback used when in wall-focus mode (replace this slot).
-  onEdit?: () => void;
   hoverable?: boolean;
 };
 
-function FrameTextured({ album, position, gridId, row, col, onEdit, hoverable }: Props) {
+function FrameTextured({ album, position, pageId, row, col, hoverable }: Props) {
   const texture = useTexture(album.coverUrl);
   useMemo(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -64,12 +62,11 @@ function FrameTextured({ album, position, gridId, row, col, onEdit, hoverable }:
       title: album.title,
       artist: album.artist,
       coverUrl: album.coverUrl,
-      sourceGridId: gridId,
+      sourcePageId: pageId,
       sourceRow: row,
       sourceCol: col,
     });
   };
-  void onEdit; // kept for API stability; chip handles edit now
 
   return (
     <group position={position}>
@@ -106,7 +103,7 @@ function FrameTextured({ album, position, gridId, row, col, onEdit, hoverable }:
       {/* Hover-revealed corner ✕ to remove this album. */}
       {hovered && hoverable && (
         <SleeveActions
-          gridId={gridId}
+          pageId={pageId}
           row={row}
           col={col}
           onChipEnter={showChip}

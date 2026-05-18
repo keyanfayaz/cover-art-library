@@ -1,42 +1,45 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useFocusStore } from '../state/focusStore';
-import { useLibraryStore, type Album, type WallGrid } from '../state/libraryStore';
+import { useNavStore } from '../state/navStore';
+import { useLibraryStore, type Album, type Page } from '../state/libraryStore';
+import { PAGE_ROWS, PAGE_COLS } from '../lib/geometry';
 import { searchAlbums, type SearchResult } from '../services/musicbrainz';
 import { SearchResults } from './SearchResults';
 
 function findNextEmptySlot(
-  grid: WallGrid,
+  page: Page,
   fromRow: number,
   fromCol: number,
 ): { row: number; col: number } | null {
-  const total = grid.rows * grid.cols;
-  const startIdx = fromRow * grid.cols + fromCol;
+  const total = PAGE_ROWS * PAGE_COLS;
+  const startIdx = fromRow * PAGE_COLS + fromCol;
   for (let offset = 1; offset <= total; offset++) {
     const idx = (startIdx + offset) % total;
-    const row = Math.floor(idx / grid.cols);
-    const col = idx % grid.cols;
-    const slot = grid.slots.find((s) => s.row === row && s.col === col);
+    const row = Math.floor(idx / PAGE_COLS);
+    const col = idx % PAGE_COLS;
+    const slot = page.slots.find((s) => s.row === row && s.col === col);
     if (slot && !slot.album) return { row, col };
   }
   return null;
 }
 
 export function AlbumPicker() {
-  const pickerOpen = useFocusStore((s) => s.pickerOpen);
-  const closePicker = useFocusStore((s) => s.closePicker);
-  const selectSlot = useFocusStore((s) => s.selectSlot);
-  const gridId = useFocusStore((s) => s.gridId);
-  const selectedSlot = useFocusStore((s) => s.selectedSlot);
+  const pickerOpen = useNavStore((s) => s.pickerOpen);
+  const closePicker = useNavStore((s) => s.closePicker);
+  const selectSlot = useNavStore((s) => s.selectSlot);
+  const pageIndex = useNavStore((s) => s.pageIndex);
+  const selectedSlot = useNavStore((s) => s.selectedSlot);
   const setSlotAlbum = useLibraryStore((s) => s.setSlotAlbum);
-  const grids = useLibraryStore((s) => s.grids);
+  const pages = useLibraryStore((s) => s.pages);
+
+  const currentPage = pages[Math.min(pageIndex, pages.length - 1)];
+  const pageId = currentPage?.id;
 
   const currentAlbum = useMemo(() => {
-    if (!gridId || !selectedSlot) return undefined;
-    const grid = grids.find((g) => g.id === gridId);
-    return grid?.slots.find(
+    if (!currentPage || !selectedSlot) return undefined;
+    return currentPage.slots.find(
       (slot) => slot.row === selectedSlot.row && slot.col === selectedSlot.col,
     )?.album;
-  }, [grids, gridId, selectedSlot]);
+  }, [currentPage, selectedSlot]);
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -87,7 +90,7 @@ export function AlbumPicker() {
     };
   }, [query, pickerOpen]);
 
-  if (!pickerOpen || !gridId || !selectedSlot) return null;
+  if (!pickerOpen || !pageId || !selectedSlot) return null;
 
   const handlePick = (r: SearchResult) => {
     const album: Album = {
@@ -97,8 +100,8 @@ export function AlbumPicker() {
       coverUrl: r.coverUrl,
       year: r.year,
     };
-    setSlotAlbum(gridId, selectedSlot.row, selectedSlot.col, album);
-    const updated = useLibraryStore.getState().grids.find((g) => g.id === gridId);
+    setSlotAlbum(pageId, selectedSlot.row, selectedSlot.col, album);
+    const updated = useLibraryStore.getState().pages.find((p) => p.id === pageId);
     if (updated) {
       const next = findNextEmptySlot(updated, selectedSlot.row, selectedSlot.col);
       if (next) selectSlot(next.row, next.col);
@@ -106,7 +109,7 @@ export function AlbumPicker() {
   };
 
   const handleRemove = () => {
-    setSlotAlbum(gridId, selectedSlot.row, selectedSlot.col, undefined);
+    setSlotAlbum(pageId, selectedSlot.row, selectedSlot.col, undefined);
   };
 
   return (
